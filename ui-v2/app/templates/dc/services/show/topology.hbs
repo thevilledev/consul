@@ -25,6 +25,19 @@
           </div>
         </div>
       </div>
+      <div class="downstream-lines">
+        <svg class="lines">
+          <g>
+            <path class="line-fill" d="M 0 80 Q 150 80 375 80"/>
+            <circle class="line-circle" cx="6" cy="80" r="5"/>
+          </g>
+          <g>
+            <path class="line-fill" d="M 0 160 Q 150 80 375 80"/>
+            <circle class="line-circle" cx="6" cy="160" r="5"/>
+          </g>
+          <polygon class="line-arrow" points="361,73 361,87 375,80" />
+        </svg>
+      </div>
     {{/if}}
       <div class="grafana-container">
         <div class="grafana-header">
@@ -35,6 +48,13 @@
         </div>
       </div>
     {{#if true}}
+      <div class="upstream-lines">
+        <svg class="lines">
+          <path class="line-fill" d="M 0 80 Q 190 80 370 80" />
+          <path class="line-fill" d="M 0 80 Q 190 160 370 160" />
+          <path class="line-fill" d="M 0 80 Q 190 250 370 240" />
+        </svg>
+      </div>
       <div class="upstream-container">
         <p>Upstreams</p>
         <div class="upstream-card">
