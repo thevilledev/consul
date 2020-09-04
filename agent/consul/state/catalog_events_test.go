@@ -1419,6 +1419,7 @@ func newTestEventServiceHealthRegister(index uint64, nodeNum int, svc string) st
 						CreateIndex: index,
 						ModifyIndex: index,
 					},
+					EnterpriseMeta: *structs.DefaultEnterpriseMeta(),
 				},
 				Checks: []*structs.HealthCheck{
 					{
@@ -1430,6 +1431,7 @@ func newTestEventServiceHealthRegister(index uint64, nodeNum int, svc string) st
 							CreateIndex: index,
 							ModifyIndex: index,
 						},
+						EnterpriseMeta: *structs.DefaultEnterpriseMeta(),
 					},
 					{
 						Node:        node,
@@ -1443,6 +1445,7 @@ func newTestEventServiceHealthRegister(index uint64, nodeNum int, svc string) st
 							CreateIndex: index,
 							ModifyIndex: index,
 						},
+						EnterpriseMeta: *structs.DefaultEnterpriseMeta(),
 					},
 				},
 			},
@@ -1485,6 +1488,7 @@ func newTestEventServiceHealthDeregister(index uint64, nodeNum int, svc string) 
 						CreateIndex: 10,
 						ModifyIndex: 10,
 					},
+					EnterpriseMeta: *structs.DefaultEnterpriseMeta(),
 				},
 			},
 		},
