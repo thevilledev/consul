@@ -1,26 +1,41 @@
 package subscribe
 
 import (
-	"github.com/hashicorp/consul/agent/consul/stream"
-	"github.com/hashicorp/consul/proto/pbevent"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-uuid"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/hashicorp/consul/acl"
+	"github.com/hashicorp/consul/agent/consul/stream"
+	"github.com/hashicorp/consul/proto/pbsubscribe"
 )
 
 // Server implements a StateChangeSubscriptionServer for accepting SubscribeRequests,
 // and sending events to the subscription topic.
 type Server struct {
-	srv    *Server
-	logger hclog.Logger
+	backend Backend
+	logger  hclog.Logger
+	cfg     Config
 }
 
-var _ pbevent.StateChangeSubscriptionServer = (*Server)(nil)
+var _ pbsubscribe.StateChangeSubscriptionServer = (*Server)(nil)
 
-func (h *Server) Subscribe(req *pbevent.SubscribeRequest, serverStream pbevent.StateChangeSubscription_SubscribeServer) error {
+type Backend interface {
+	ResolveToken(token string) (acl.Authorizer, error)
+	GRPCConn(dc string) (*grpc.ClientConn, error)
+	Subscribe(req *stream.SubscribeRequest) (*stream.Subscription, error)
+}
+
+type Config struct {
+	Datacenter string
+}
+
+func (h *Server) Subscribe(req *pbsubscribe.SubscribeRequest, serverStream pbsubscribe.StateChangeSubscription_SubscribeServer) error {
 	// streamID is just used for message correlation in trace logs and not
 	// populated normally.
 	var streamID string
-	var err error
 
 	if h.logger.IsTrace() {
 		// TODO(banks) it might be nice one day to replace this with OpenTracing ID
@@ -28,18 +43,18 @@ func (h *Server) Subscribe(req *pbevent.SubscribeRequest, serverStream pbevent.S
 		// in other places so it's actually propagated properly. For now this just
 		// makes lifetime of a stream more traceable in our regular server logs for
 		// debugging/dev.
+		var err error
 		streamID, err = uuid.GenerateUUID()
 		if err != nil {
 			return err
 		}
 	}
 
-	// Forward the request to a remote DC if applicable.
-	if req.Datacenter != "" && req.Datacenter != h.srv.config.Datacenter {
+	if req.Datacenter != "" && req.Datacenter != h.cfg.Datacenter {
 		return h.forwardAndProxy(req, serverStream, streamID)
 	}
 
-	h.srv.logger.Trace("new subscription",
+	h.logger.Trace("new subscription",
 		"topic", req.Topic.String(),
 		"key", req.Key,
 		"index", req.Index,
@@ -47,107 +62,79 @@ func (h *Server) Subscribe(req *pbevent.SubscribeRequest, serverStream pbevent.S
 	)
 
 	var sentCount uint64
-	defer h.srv.logger.Trace("subscription closed", "stream_id", streamID)
+	defer h.logger.Trace("subscription closed", "stream_id", streamID)
 
 	// Resolve the token and create the ACL filter.
 	// TODO: handle token expiry gracefully...
-	authz, err := h.srv.ResolveToken(req.Token)
+	authz, err := h.backend.ResolveToken(req.Token)
 	if err != nil {
 		return err
 	}
-	aclFilter := newACLFilter(authz, h.srv.logger, h.srv.config.ACLEnforceVersion8)
 
-	state := h.srv.fsm.State()
-
-	// Register a subscription on this topic/key with the FSM.
-	sub, err := state.Subscribe(serverStream.Context(), req)
+	sub, err := h.backend.Subscribe(toStreamSubscribeRequest(req))
 	if err != nil {
 		return err
 	}
-	defer state.Unsubscribe(req)
+	defer sub.Unsubscribe()
 
-	// Deliver the events
+	ctx := serverStream.Context()
+	snapshotDone := false
 	for {
-		events, err := sub.Next()
-		if err == stream.ErrSubscriptionReload {
-			event := pbevent.Event{
-				Payload: &pbevent.Event_ResetStream{ResetStream: true},
-			}
-			if err := serverStream.Send(&event); err != nil {
-				return err
-			}
-			h.srv.logger.Trace("subscription reloaded",
-				"stream_id", streamID,
-			)
-			return nil
-		}
-		if err != nil {
+		events, err := sub.Next(ctx)
+		switch {
+		case err == stream.ErrSubscriptionClosed:
+			h.logger.Trace("subscription reset by server", "stream_id", streamID)
+			return status.Error(codes.Aborted, err.Error())
+
+		case err != nil:
 			return err
 		}
 
-		aclFilter.filterStreamEvents(&events)
+		events = filterStreamEvents(authz, events)
+		if len(events) == 0 {
+			continue
+		}
 
-		snapshotDone := false
-		if len(events) == 1 {
-			if events[0].GetEndOfSnapshot() {
-				snapshotDone = true
-				h.srv.logger.Trace("snapshot complete",
-					"index", events[0].Index,
-					"sent", sentCount,
-					"stream_id", streamID,
-				)
-			} else if events[0].GetResumeStream() {
-				snapshotDone = true
-				h.srv.logger.Trace("resuming stream",
-					"index", events[0].Index,
-					"sent", sentCount,
-					"stream_id", streamID,
-				)
-			} else if snapshotDone {
-				// Count this event too in the normal case as "sent" the above cases
-				// only show the number of events sent _before_ the snapshot ended.
-				h.srv.logger.Trace("sending events",
-					"index", events[0].Index,
-					"sent", sentCount,
-					"batch_size", 1,
-					"stream_id", streamID,
-				)
-			}
-			sentCount++
-			if err := serverStream.Send(&events[0]); err != nil {
-				return err
-			}
-		} else if len(events) > 1 {
-			e := &pbevent.Event{
-				Topic: req.Topic,
-				Key:   req.Key,
-				Index: events[0].Index,
-				Payload: &pbevent.Event_EventBatch{
-					EventBatch: &pbevent.EventBatch{
-						Events: pbevent.EventBatchEventsFromEventSlice(events),
-					},
-				},
-			}
-			sentCount += uint64(len(events))
-			h.srv.logger.Trace("sending events",
-				"index", events[0].Index,
+		first := events[0]
+		switch {
+		case first.IsEndOfSnapshot() || first.IsEndOfEmptySnapshot():
+			snapshotDone = true
+			h.logger.Trace("snapshot complete",
+				"index", first.Index, "sent", sentCount, "stream_id", streamID)
+		case snapshotDone:
+			h.logger.Trace("sending events",
+				"index", first.Index,
 				"sent", sentCount,
 				"batch_size", len(events),
 				"stream_id", streamID,
 			)
-			if err := serverStream.Send(e); err != nil {
-				return err
-			}
+		}
+
+		e := newEventFromStreamEvents(req, events)
+		sentCount += uint64(len(events))
+		if err := serverStream.Send(e); err != nil {
+			return err
 		}
 	}
 }
 
-func (h *Server) forwardAndProxy(
-	req *pbevent.SubscribeRequest,
-	serverStream pbevent.StateChangeSubscription_SubscribeServer,
-	streamID string) error {
+// TODO: can be replaced by mog conversion
+func toStreamSubscribeRequest(req *pbsubscribe.SubscribeRequest) *stream.SubscribeRequest {
+	return &stream.SubscribeRequest{
+		// TODO: translate topic or use protobuf topic in state package
+		Topic: req.Topic,
+		Key:   req.Key,
+		Token: req.Token,
+		Index: req.Index,
+	}
+}
 
-	conn, err := h.srv.grpcClient.GRPCConn(req.Datacenter)
+func (h *Server) forwardAndProxy(
+	req *pbsubscribe.SubscribeRequest,
+	serverStream pbsubscribe.StateChangeSubscription_SubscribeServer,
+	streamID string,
+) error {
+	conn, err := h.backend.GRPCConn(req.Datacenter)
 	if err != nil {
 		return err
 	}
@@ -167,14 +154,12 @@ func (h *Server) forwardAndProxy(
 		)
 	}()
 
-	// Open a Subscribe call to the remote DC.
-	client := pbevent.NewConsulClient(conn)
+	client := pbsubscribe.NewStateChangeSubscriptionClient(conn)
 	streamHandle, err := client.Subscribe(serverStream.Context(), req)
 	if err != nil {
 		return err
 	}
 
-	// Relay the events back to the client.
 	for {
 		event, err := streamHandle.Recv()
 		if err != nil {
@@ -184,4 +169,70 @@ func (h *Server) forwardAndProxy(
 			return err
 		}
 	}
+}
+
+// filterStreamEvents to only those allowed by the acl token.
+func filterStreamEvents(authz acl.Authorizer, events []stream.Event) []stream.Event {
+	// TODO: when is authz nil?
+	if authz == nil || len(events) == 0 {
+		return events
+	}
+
+	// Fast path for the common case of only 1 event since we can avoid slice
+	// allocation in the hot path of every single update event delivered in vast
+	// majority of cases with this. Note that this is called _per event/item_ when
+	// sending snapshots which is a lot worse than being called once on regular
+	// result.
+	if len(events) == 1 {
+		if enforceACL(authz, events[0]) == acl.Allow {
+			return events
+		}
+		return nil
+	}
+
+	var filtered []stream.Event
+
+	for idx := range events {
+		event := events[idx]
+		if enforceACL(authz, event) == acl.Allow {
+			filtered = append(filtered, event)
+		}
+	}
+
+	return filtered
+}
+
+func newEventFromStreamEvents(req *pbsubscribe.SubscribeRequest, events []stream.Event) *pbsubscribe.Event {
+	e := &pbsubscribe.Event{
+		Topic: req.Topic,
+		Key:   req.Key,
+		Index: events[0].Index,
+	}
+	if len(events) == 1 {
+		setPayload(e, events[0].Payload)
+		return e
+	}
+
+	e.Payload = &pbsubscribe.Event_EventBatch{
+		EventBatch: &pbsubscribe.EventBatch{
+			Events: batchEventsFromEventSlice(events),
+		},
+	}
+	return e
+}
+
+// TODO:
+func setPayload(e *pbsubscribe.Event, payload interface{}) {
+	switch payload.(type) {
+	}
+	panic("event payload not implemented")
+}
+
+func batchEventsFromEventSlice(events []stream.Event) []*pbsubscribe.Event {
+	ret := make([]*pbsubscribe.Event, len(events))
+	for i := range events {
+		ret[i] = &pbsubscribe.Event{}
+		setPayload(ret[i], events[i].Payload)
+	}
+	return ret
 }
