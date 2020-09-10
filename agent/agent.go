@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/consul/agent/dns"
@@ -301,6 +302,15 @@ type Agent struct {
 	// Shared RPC Router
 	router *router.Router
 
+	// uiConfig is an atomically held copy of the current UI config. It's
+	// populated from config.UIConfig on agent startup but then becomes the
+	// canonical source where all reads during runtime should be made. It may be
+	// updated on a configuration reload.
+	//
+	// Internal components that need the latest UI Config should use the
+	// a.getUIConfig() method.
+	uiConfig atomic.Value
+
 	// enterpriseAgent embeds fields that we only access in consul-enterprise builds
 	enterpriseAgent
 }
@@ -348,6 +358,9 @@ func New(bd BaseDeps) (*Agent, error) {
 		autoConf:        bd.AutoConfig,
 		router:          bd.Router,
 	}
+
+	// Initialize the UI Config
+	a.uiConfig.Store(a.config.UIConfig)
 
 	a.serviceManager = NewServiceManager(&a)
 
@@ -3838,4 +3851,15 @@ func defaultIfEmpty(val, defaultVal string) string {
 		return val
 	}
 	return defaultVal
+}
+
+// getUIConfig is the canonical way to read the value of the UIConfig at
+// runtime. It is thread safe and returns the most recent configuration which
+// may have changed since the agent started due to config reload.
+func (a *Agent) getUIConfig() config.UIConfig {
+	if cfg, ok := a.uiConfig.Load().(config.UIConfig); ok {
+		return cfg
+	}
+	// Shouldn't happen but be defensive
+	return config.UIConfig{}
 }
