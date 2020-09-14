@@ -10,6 +10,7 @@ import (
 	autoconf "github.com/hashicorp/consul/agent/auto-config"
 	"github.com/hashicorp/consul/agent/cache"
 	"github.com/hashicorp/consul/agent/config"
+	"github.com/hashicorp/consul/agent/grpc/resolver"
 	"github.com/hashicorp/consul/agent/pool"
 	"github.com/hashicorp/consul/agent/router"
 	"github.com/hashicorp/consul/agent/token"
@@ -84,8 +85,10 @@ func NewBaseDeps(configLoader ConfigLoader, logOut io.Writer) (BaseDeps, error) 
 	d.Cache = cache.New(cfg.Cache)
 	d.ConnPool = newConnPool(cfg, d.Logger, d.TLSConfigurator)
 
-	// TODO: set grpcServerTracker, requires serf to be setup before this.
-	d.Router = router.NewRouter(d.Logger, cfg.Datacenter, fmt.Sprintf("%s.%s", cfg.NodeName, cfg.Datacenter), nil)
+	// TODO(streaming): setConfig.Scheme name for tests
+	builder := resolver.NewServerResolverBuilder(resolver.Config{})
+	resolver.RegisterWithGRPC(builder)
+	d.Router = router.NewRouter(d.Logger, cfg.Datacenter, fmt.Sprintf("%s.%s", cfg.NodeName, cfg.Datacenter), builder)
 
 	acConf := autoconf.Config{
 		DirectRPC:       d.ConnPool,
