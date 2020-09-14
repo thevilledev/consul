@@ -648,7 +648,8 @@ func newGRPCHandlerFromConfig(logger hclog.Logger, config *Config, s *Server) co
 
 	register := func(srv *grpc.Server) {
 		pbsubscribe.RegisterStateChangeSubscriptionServer(srv, &subscribe.Server{
-			Backend: &subscribeBackend{srv: s},
+			// TODO: get grpcConnPool from somewhere
+			Backend: &subscribeBackend{srv: s, connPool: nil},
 			Logger:  logger.Named("subscribe"),
 		})
 	}

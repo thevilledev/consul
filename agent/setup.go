@@ -10,6 +10,7 @@ import (
 	autoconf "github.com/hashicorp/consul/agent/auto-config"
 	"github.com/hashicorp/consul/agent/cache"
 	"github.com/hashicorp/consul/agent/config"
+	"github.com/hashicorp/consul/agent/grpc"
 	"github.com/hashicorp/consul/agent/grpc/resolver"
 	"github.com/hashicorp/consul/agent/pool"
 	"github.com/hashicorp/consul/agent/router"
@@ -34,6 +35,7 @@ type BaseDeps struct {
 	Cache           *cache.Cache
 	AutoConfig      *autoconf.AutoConfig // TODO: use an interface
 	ConnPool        *pool.ConnPool       // TODO: use an interface
+	GRPCConnPool    *grpc.ClientConnPool
 	Router          *router.Router
 }
 
@@ -88,6 +90,8 @@ func NewBaseDeps(configLoader ConfigLoader, logOut io.Writer) (BaseDeps, error) 
 	// TODO(streaming): setConfig.Scheme name for tests
 	builder := resolver.NewServerResolverBuilder(resolver.Config{})
 	resolver.RegisterWithGRPC(builder)
+	d.GRPCConnPool = grpc.NewClientConnPool(builder, grpc.TLSWrapper(d.TLSConfigurator.OutgoingRPCWrapper()))
+
 	d.Router = router.NewRouter(d.Logger, cfg.Datacenter, fmt.Sprintf("%s.%s", cfg.NodeName, cfg.Datacenter), builder)
 
 	acConf := autoconf.Config{
