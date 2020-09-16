@@ -2,6 +2,7 @@ package uiserver
 
 import (
 	"encoding/json"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUIServer(t *testing.T) {
+func TestUIServerIndex(t *testing.T) {
 	cases := []struct {
 		name            string
 		cfg             *config.RuntimeConfig
@@ -75,6 +76,19 @@ func TestUIServer(t *testing.T) {
 			wantContains: []string{"<!-- CONSUL_VERSION:"},
 			wantEnv: map[string]interface{}{
 				"CONSUL_ACLS_ENABLED": true,
+			},
+		},
+		{
+			name: "serving metrics provider js",
+			cfg: basicUIEnabledConfig(
+				withMetricsProvider("foo"),
+				withMetricsProviderFiles("testdata/foo.js", "testdata/bar.js"),
+			),
+			path:       "/",
+			wantStatus: http.StatusOK,
+			wantContains: []string{
+				"<!-- CONSUL_VERSION:",
+				`<script src="/ui/assets/compiled-metrics-providers.js">`,
 			},
 		},
 	}
@@ -149,7 +163,8 @@ type cfgFunc func(cfg *config.RuntimeConfig)
 func basicUIEnabledConfig(opts ...cfgFunc) *config.RuntimeConfig {
 	cfg := &config.RuntimeConfig{
 		UIConfig: config.UIConfig{
-			Enabled: true,
+			Enabled:     true,
+			ContentPath: "/ui/",
 		},
 	}
 	for _, f := range opts {
@@ -169,6 +184,12 @@ func withACLs() cfgFunc {
 func withMetricsProvider(name string) cfgFunc {
 	return func(cfg *config.RuntimeConfig) {
 		cfg.UIConfig.MetricsProvider = name
+	}
+}
+
+func withMetricsProviderFiles(names ...string) cfgFunc {
+	return func(cfg *config.RuntimeConfig) {
+		cfg.UIConfig.MetricsProviderFiles = names
 	}
 }
 
@@ -227,4 +248,44 @@ func TestReload(t *testing.T) {
 		require.Contains(t, rec.Body.String(), "<!-- CONSUL_VERSION:")
 		require.Contains(t, rec.Body.String(), "exotic-metrics-provider-name")
 	}
+}
+
+func TestCompiledJS(t *testing.T) {
+	cfg := basicUIEnabledConfig(
+		withMetricsProvider("foo"),
+		withMetricsProviderFiles("testdata/foo.js", "testdata/bar.js"),
+	)
+	h := NewHandler(cfg, testutil.Logger(t))
+
+	paths := []string{
+		"/" + compiledProviderJSPath,
+		// We need to work even without the initial slash because the agent uses
+		// http.StripPrefix with the entire ContentPath which includes a trailing
+		// slash. This apparently works fine for the assetFS etc. so we need to
+		// also tolerate it when the URL doesn't have a slash at the start of the
+		// path.
+		compiledProviderJSPath,
+	}
+
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			// NewRequest doesn't like paths with no leading slash but we need to test
+			// a request with a URL that has that so just create with root path and
+			// then manually modify the URL path so it emulates one that has been
+			// doctored by http.StripPath.
+			req := httptest.NewRequest("GET", "/", nil)
+			req.URL.Path = path
+
+			rec := httptest.NewRecorder()
+
+			h.ServeHTTP(rec, req)
+
+			require.Equal(t, http.StatusOK, rec.Code)
+			require.Equal(t, rec.Result().Header["Content-Type"][0], "application/javascript")
+			wantCompiled, err := ioutil.ReadFile("testdata/compiled-metrics-providers-golden.js")
+			require.NoError(t, err)
+			require.Equal(t, rec.Body.String(), string(wantCompiled))
+		})
+	}
+
 }

@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path"
 	"regexp"
 	"strings"
 	"sync/atomic"
@@ -14,6 +15,10 @@ import (
 	"github.com/hashicorp/consul/agent/config"
 	"github.com/hashicorp/consul/logging"
 	"github.com/hashicorp/go-hclog"
+)
+
+const (
+	compiledProviderJSPath = "assets/compiled-metrics-providers.js"
 )
 
 // Handler is the http.Handler that serves the Consul UI. It may serve from the
@@ -53,14 +58,21 @@ func NewHandler(agentCfg *config.RuntimeConfig, logger hclog.Logger) *Handler {
 
 // ServeHTTP implements http.Handler and serves UI HTTP requests
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-
 	if h.err != nil {
 		http.Error(w, "UI server is misconfigured.", http.StatusInternalServerError)
 		h.logger.Error("Failed to configure UI server: %s", h.err)
 		return
 	}
 
-	// TODO: special case for compiled metrics assets in later PR
+	// We need to support the path being trimmed by http.StripTags just like the
+	// file servers do since http.StripPrefix will remove the leading slash in our
+	// current config. Everything else works fine that way so we should to.
+	pathTrimmed := strings.TrimLeft(r.URL.Path, "/")
+	if pathTrimmed == compiledProviderJSPath {
+		h.serveUIMetricsProviders(w, r)
+		return
+	}
+
 	s := h.getState()
 	if s == nil {
 		panic("nil state")
@@ -115,6 +127,61 @@ func (h *Handler) getState() *reloadableState {
 		return &cfg
 	}
 	return nil
+}
+
+func (h *Handler) serveUIMetricsProviders(resp http.ResponseWriter, req *http.Request) {
+	// Reload config in case it's changed
+	state := h.getState()
+
+	if len(state.cfg.MetricsProviderFiles) < 1 {
+		http.Error(resp, "No provider JS files configured", http.StatusNotFound)
+		return
+	}
+
+	var buf bytes.Buffer
+
+	// Open each one and concatenate them
+	for _, file := range state.cfg.MetricsProviderFiles {
+		base := path.Base(file)
+		_, err := buf.WriteString("// " + base + "\n\n")
+		if err != nil {
+			http.Error(resp, "Internal Server Error", http.StatusInternalServerError)
+			h.logger.Error("failed writing provider JS files: %s", err)
+			return
+		}
+
+		// Attempt to open the file
+		f, err := os.Open(file)
+		if err != nil {
+			http.Error(
+				resp,
+				"Failed to open provider JS file. See Consul agent logs for more.",
+				http.StatusNotFound,
+			)
+			h.logger.Error("failed opening ui metrics provider JS file", "file", file, "error", err)
+			return
+		}
+		_, err = buf.ReadFrom(f)
+		if err != nil {
+			http.Error(resp, "Internal Server Error", http.StatusInternalServerError)
+			h.logger.Error("failed reading ui metrics provider JS file", "file", file, "error", err)
+			return
+		}
+		_, err = buf.WriteString("\n\n")
+		if err != nil {
+			http.Error(resp, "Internal Server Error", http.StatusInternalServerError)
+			h.logger.Error("failed writing provider JS files", "error", err)
+			return
+		}
+	}
+	// Done!
+	resp.Header()["Content-Type"] = []string{"application/javascript"}
+	_, err := buf.WriteTo(resp)
+	if err != nil {
+		http.Error(resp, "Internal Server Error", http.StatusInternalServerError)
+		h.logger.Error("failed writing ui metrics provider files: %s", err)
+		return
+	}
 }
 
 func renderIndex(cfg *config.RuntimeConfig, fs http.FileSystem) ([]byte, os.FileInfo, error) {

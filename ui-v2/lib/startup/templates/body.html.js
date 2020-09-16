@@ -41,5 +41,8 @@ module.exports = ({ appName, environment, rootURL, config }) => `
       }
     };
   </script>
+  {{ range .ExtraScripts }}
+    <script src="{{.}}"></script>
+  {{ end }}
   ${environment === 'test' ? `<script src="${rootURL}assets/tests.js"></script>` : ``}
 `;
