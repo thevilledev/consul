@@ -1108,7 +1108,7 @@ func newConsulConfig(runtimeCfg *config.RuntimeConfig, logger hclog.Logger) (*co
 
 	// Rate limiting for RPC calls.
 	if runtimeCfg.RPCRateLimit > 0 {
-		cfg.RPCRate = runtimeCfg.RPCRateLimit
+		cfg.RPCRateLimit = runtimeCfg.RPCRateLimit
 	}
 	if runtimeCfg.RPCMaxBurst > 0 {
 		cfg.RPCMaxBurst = runtimeCfg.RPCMaxBurst

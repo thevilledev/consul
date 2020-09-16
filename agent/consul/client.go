@@ -133,7 +133,7 @@ func NewClient(config *Config, options ...ConsulOption) (*Client, error) {
 		tlsConfigurator: tlsConfigurator,
 	}
 
-	c.rpcLimiter.Store(rate.NewLimiter(config.RPCRate, config.RPCMaxBurst))
+	c.rpcLimiter.Store(rate.NewLimiter(config.RPCRateLimit, config.RPCMaxBurst))
 
 	if err := c.initEnterprise(); err != nil {
 		c.Shutdown()

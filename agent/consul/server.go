@@ -433,7 +433,7 @@ func NewServer(config *Config, options ...ConsulOption) (*Server, error) {
 		return nil, err
 	}
 
-	s.rpcLimiter.Store(rate.NewLimiter(config.RPCRate, config.RPCMaxBurst))
+	s.rpcLimiter.Store(rate.NewLimiter(config.RPCRateLimit, config.RPCMaxBurst))
 
 	configReplicatorConfig := ReplicatorConfig{
 		Name:     logging.ConfigEntry,
