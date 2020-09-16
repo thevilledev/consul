@@ -706,23 +706,26 @@ func TestClientServer_UserEvent(t *testing.T) {
 	}
 }
 
-func TestClient_Reload(t *testing.T) {
-	t.Parallel()
-	dir1, c := testClientWithConfig(t, func(c *Config) {
-		c.RPCRate = 500
-		c.RPCMaxBurst = 5000
+func TestClient_ReloadConfig(t *testing.T) {
+	_, cfg := testClientConfig(t)
+	cfg.RPCRate = rate.Limit(500)
+	cfg.RPCMaxBurst = 5000
+	c, err := NewClient(cfg, func(opts *consulOptions) {
+		opts.logger = hclog.NewInterceptLogger(nil)
 	})
-	defer os.RemoveAll(dir1)
-	defer c.Shutdown()
+	require.NoError(t, err)
 
 	limiter := c.rpcLimiter.Load().(*rate.Limiter)
 	require.Equal(t, rate.Limit(500), limiter.Limit())
 	require.Equal(t, 5000, limiter.Burst())
 
-	c.config.RPCRate = 1000
-	c.config.RPCMaxBurst = 10000
+	rc := ReloadableConfig{
+		RPCRateLimit:         1000,
+		RPCMaxBurst:          10000,
+		RPCMaxConnsPerClient: 0,
+	}
+	require.NoError(t, c.ReloadConfig(rc))
 
-	require.NoError(t, c.ReloadConfig(c.config))
 	limiter = c.rpcLimiter.Load().(*rate.Limiter)
 	require.Equal(t, rate.Limit(1000), limiter.Limit())
 	require.Equal(t, 10000, limiter.Burst())
