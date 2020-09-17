@@ -303,9 +303,11 @@ type Agent struct {
 	router *router.Router
 
 	// uiConfig is an atomically held copy of the current UI config. It's
-	// populated from config.UIConfig on agent startup but then becomes the
-	// canonical source where all reads during runtime should be made. It may be
-	// updated on a configuration reload.
+	// populated from config.UIConfig when the agent is first constructed but then
+	// becomes the canonical source where all reads during runtime should be made.
+	// It needs to be separate because it may be updated by a config reload at
+	// runtime and so must be able to be read and reloaded safely from different
+	// goroutines.
 	//
 	// Internal components that need the latest UI Config should use the
 	// a.getUIConfig() method.
@@ -3599,6 +3601,9 @@ func (a *Agent) reloadConfigInternal(newCfg *config.RuntimeConfig) error {
 		newCfg.Telemetry.BlockedPrefixes)
 
 	a.State.SetDiscardCheckOutput(newCfg.DiscardCheckOutput)
+
+	// Reload metrics config
+	a.uiConfig.Store(newCfg.UIConfig)
 
 	return nil
 }
