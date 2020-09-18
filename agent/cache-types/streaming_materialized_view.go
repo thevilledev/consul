@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/consul/agent/agentpb"
 	"github.com/hashicorp/consul/agent/cache"
 	"github.com/hashicorp/consul/lib"
+	"github.com/hashicorp/consul/proto/pbsubscribe"
 	"github.com/hashicorp/go-hclog"
 	"google.golang.org/grpc"
 )
@@ -22,7 +22,7 @@ const (
 // StreamingClient is the interface we need from the gRPC client stub. Separate
 // interface simplifies testing.
 type StreamingClient interface {
-	Subscribe(ctx context.Context, in *agentpb.SubscribeRequest, opts ...grpc.CallOption) (agentpb.Consul_SubscribeClient, error)
+	Subscribe(ctx context.Context, in *pbsubscribe.SubscribeRequest, opts ...grpc.CallOption) (pbsubscribe.StateChangeSubscription_SubscribeClient, error)
 }
 
 // MaterializedViewState is the interface used to manage they type-specific
@@ -42,7 +42,7 @@ type MaterializedViewState interface {
 	// include _all_ events in the initial snapshot which may be an empty set.
 	// Subsequent calls will contain one or more update events in the order they
 	// are received.
-	Update(events []*agentpb.Event) error
+	Update(events []*pbsubscribe.Event) error
 
 	// Result returns the type-specific cache result based on the state. When no
 	// events have been delivered yet the result should be an empty value type
@@ -97,7 +97,7 @@ type MaterializedView struct {
 	typ        StreamingCacheType
 	client     StreamingClient
 	logger     hclog.Logger
-	req        agentpb.SubscribeRequest
+	req        pbsubscribe.SubscribeRequest
 	ctx        context.Context
 	cancelFunc func()
 
@@ -121,7 +121,7 @@ type MaterializedView struct {
 // though Close must be called some other way to avoid leaking the goroutine and
 // memory.
 func MaterializedViewFromFetch(t StreamingCacheType, opts cache.FetchOptions,
-	subReq agentpb.SubscribeRequest) *MaterializedView {
+	subReq pbsubscribe.SubscribeRequest) *MaterializedView {
 
 	if opts.LastResult == nil || opts.LastResult.State == nil {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -230,10 +230,11 @@ func (v *MaterializedView) runSubscription() error {
 		return err
 	}
 
-	snapshotEvents := make([]*agentpb.Event, 0)
+	snapshotEvents := make([]*pbsubscribe.Event, 0)
 
 	for {
 		event, err := s.Recv()
+		// TODO: handle error abandoned as reset
 		if err != nil {
 			return err
 		}
@@ -276,6 +277,7 @@ func (v *MaterializedView) runSubscription() error {
 			continue
 		}
 
+		// TODO: impossible case, already checked above
 		if event.GetResumeStream() {
 			// We've opened a new subscribe with a non-zero index to resume a
 			// connection and the server confirms it's not sending a new snapshot.
@@ -291,7 +293,7 @@ func (v *MaterializedView) runSubscription() error {
 		}
 
 		// We have an event for the topic
-		events := []*agentpb.Event{event}
+		events := []*pbsubscribe.Event{event}
 
 		// If the event is a batch, unwrap and deliver the raw events
 		if batch := event.GetEventBatch(); batch != nil {
