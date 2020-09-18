@@ -1,6 +1,9 @@
 package subscribe
 
 import (
+	"github.com/hashicorp/consul/agent/consul/state"
+	"github.com/hashicorp/consul/agent/structs"
+	"github.com/hashicorp/consul/proto/pbservice"
 	"github.com/hashicorp/go-uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -121,7 +124,6 @@ func (h *Server) Subscribe(req *pbsubscribe.SubscribeRequest, serverStream pbsub
 // TODO: can be replaced by mog conversion
 func toStreamSubscribeRequest(req *pbsubscribe.SubscribeRequest) *stream.SubscribeRequest {
 	return &stream.SubscribeRequest{
-		// TODO: translate topic or use protobuf topic in state package
 		Topic: req.Topic,
 		Key:   req.Key,
 		Token: req.Token,
@@ -220,9 +222,25 @@ func newEventFromStreamEvents(req *pbsubscribe.SubscribeRequest, events []stream
 
 // TODO:
 func setPayload(e *pbsubscribe.Event, payload interface{}) {
-	switch payload.(type) {
+	ep, ok := payload.(state.EventPayload)
+	if !ok {
+		// TODO: better handling
+		panic("unknown payload")
 	}
-	panic("event payload not implemented")
+
+	switch v := ep.Obj.(type) {
+	case *structs.CheckServiceNode:
+		e.Payload = &pbsubscribe.Event_ServiceHealth{
+			ServiceHealth: &pbsubscribe.ServiceHealthUpdate{
+				// TODO: set operation.
+				Op:               pbsubscribe.CatalogOp(0),
+				CheckServiceNode: pbservice.NewCheckServiceNodeFromStructs(v),
+			},
+		}
+	}
+
+	// TODO: better handling
+	panic("unknown payload")
 }
 
 func batchEventsFromEventSlice(events []stream.Event) []*pbsubscribe.Event {

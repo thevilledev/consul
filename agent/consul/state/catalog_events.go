@@ -11,7 +11,6 @@ type changeOp int
 const (
 	OpDelete changeOp = iota
 	OpCreate
-	OpUpdate
 )
 
 // EventPayload is used as the Payload for a stream.Event.

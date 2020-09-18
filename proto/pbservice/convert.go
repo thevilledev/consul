@@ -35,6 +35,56 @@ func NewMapHeadersFromStructs(t map[string][]string) map[string]HeaderValue {
 	return s
 }
 
+// TODO: use mog once it supports pointers and slices
+func CheckServiceNodeToStructs(s *CheckServiceNode) *structs.CheckServiceNode {
+	if s == nil {
+		return nil
+	}
+	var t structs.CheckServiceNode
+	if s.Node != nil {
+		n := NodeToStructs(*s.Node)
+		t.Node = &n
+	}
+	if s.Service != nil {
+		r := NodeServiceToStructs(*s.Service)
+		t.Service = &r
+	}
+	t.Checks = make(structs.HealthChecks, len(s.Checks))
+	for i, c := range s.Checks {
+		if c == nil {
+			continue
+		}
+		h := HealthCheckToStructs(*c)
+		t.Checks[i] = &h
+	}
+	return &t
+}
+
+// TODO: use mog once it supports pointers and slices
+func NewCheckServiceNodeFromStructs(t *structs.CheckServiceNode) *CheckServiceNode {
+	if t == nil {
+		return nil
+	}
+	var s CheckServiceNode
+	if t.Node != nil {
+		n := NewNodeFromStructs(*t.Node)
+		s.Node = &n
+	}
+	if t.Service != nil {
+		r := NewNodeServiceFromStructs(*t.Service)
+		s.Service = &r
+	}
+	t.Checks = make(structs.HealthChecks, len(t.Checks))
+	for i, c := range t.Checks {
+		if c == nil {
+			continue
+		}
+		h := NewHealthCheckFromStructs(*c)
+		s.Checks[i] = &h
+	}
+	return &s
+}
+
 // TODO: handle this with mog, once mog handles pointers
 func WeightsPtrToStructs(s *Weights) *structs.Weights {
 	if s == nil {

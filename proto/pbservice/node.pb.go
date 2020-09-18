@@ -28,6 +28,12 @@ const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
 
 // CheckServiceNode is used to provide the node, its service
 // definition, as well as a HealthCheck that is associated.
+//
+// mog annotation:
+//
+// target=github.com/hashicorp/consul/agent/structs.CheckServiceNode
+// output=node.gen.go
+// name=Structs
 type CheckServiceNode struct {
 	Node    *Node          `protobuf:"bytes,1,opt,name=Node,proto3" json:"Node,omitempty"`
 	Service *NodeService   `protobuf:"bytes,2,opt,name=Service,proto3" json:"Service,omitempty"`
