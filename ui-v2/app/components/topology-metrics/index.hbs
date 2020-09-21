@@ -1,0 +1,134 @@
+{{on-window 'resize' (action "resize") }}
+<div {{did-insert (action "resize")}} class="topology-container">
+{{#if true}}
+  <div id="downstream-container" class="downstream-container">
+    <p>Downstreams</p>
+    <div id="downstream-1" class="downstream-card">
+      <p>
+        redis
+      </p>
+      <div class="details">
+        <span class="datacenter">us-east-1</span>
+        <span class="passing">80%</span>
+        <span class="critical">20%</span>
+      </div>
+    </div>
+    <div id="downstream-2" class="downstream-card">
+      <p>
+        service-a
+      </p>
+      <div class="details">
+        <span class="datacenter">us-east-1</span>
+        <span class="passing">100%</span>
+      </div>
+    </div>
+  </div>
+  <div id="grafana-box" class="grafana-container">
+    <div class="grafana-header">
+      web
+    </div>
+    <div class="grafana-link">
+      <a href="#">Open Grafana Dashboard</a>
+    </div>
+  </div>
+  <div id="downstream-lines" class="downstream-lines">
+    {{did-update this.downDim}}
+    <svg viewBox={{concat downDim.x ' ' downDim.y ' ' downDim.width ' ' downDim.height}} preserveAspectRatio="none">
+    {{#let (dom-position '#grafana-box') as |dest|}}
+      {{#let (dom-position "#downstream-1") as |src|}}
+      <g>
+        <path
+          class="line-fill"
+          id='downstream-1>grafana-box'
+          d={{
+            svg-curve (hash
+              x=dest.x
+              y=(add dest.y (div dest.height 4))
+            ) src=(hash
+              x=(add src.x src.width)
+              y=(add src.y (div src.height 2))
+          )}}
+        />
+        <circle class="line-circle" cx={{add src.x src.width}} cy={{add src.y (div src.height 2)}} r="5"/>
+      </g>
+      {{/let}}
+      {{#let (dom-position "#downstream-2") as |src|}}
+      <g>
+        <path
+          class="line-fill"
+          id='downstream-2>grafana-box'
+          d={{
+            svg-curve (hash
+              x=dest.x
+              y=(add dest.y (div dest.height 4))
+            ) src=(hash
+              x=(add src.x src.width)
+              y=(add src.y (div src.height 2))
+          )}}
+        />
+        <circle class="line-circle" cx={{add src.x src.width}} cy={{add src.y (div src.height 2)}} r="5"/>
+      </g>
+      {{/let}}
+      <polygon class="line-arrow"
+        points={{
+          concat (sub dest.x 3) ' ' (sub (add dest.y (div dest.height 4)) 5) ' '
+          concat (add dest.x 7) ' ' (add dest.y (div dest.height 4)) ' '
+          concat (sub dest.x 3) ' ' (add (add dest.y (div dest.height 4)) 5) ' '
+        }}
+      />
+    {{/let}}
+    </svg>
+  </div>
+{{/if}}
+{{#if true}}
+  <div class="upstream-lines">
+    <svg class="lines" viewBox="0 0 200 500" preserveAspectRatio="xMidYMid meet">
+      <g>
+        <path class="line-fill" d="M 5 70 Q 100 70 195 70" />
+        <polygon class="line-arrow" points="188,65 188,75 198,70" />
+      </g>
+      <g>
+        <path class="line-fill" d="M 5 70 Q 100 130 195 130" />
+        <polygon class="line-arrow" points="188,125 188,135 198,130" />
+      </g>
+      <g>
+        <path class="line-fill" d="M 5 70 Q 100 200 195 200" />
+        <polygon class="line-arrow" points="188,195 188,205 198,200" />
+      </g>
+      <circle class="line-circle" cx="6" cy="70" r="5"/>
+    </svg>
+  </div>
+  <div class="upstream-container">
+    <p>Upstreams</p>
+    <div id="upstream-1" class="upstream-card">
+      <p>
+        consul
+      </p>
+      <div class="details">
+        <span class="port">:80</span>
+        <span class="passing">100%</span>
+      </div>
+    </div>
+    <div id="upstream-2" class="upstream-card">
+      <p>
+        consul
+      </p>
+      <div class="details">
+        <span class="port">:80</span>
+        <span class="passing">33%</span>
+        <span class="critical">66%</span>
+      </div>
+    </div>
+    <div id="upstream-3" class="upstream-card">
+      <p>
+        consul
+      </p>
+      <div class="details">
+        <span class="datacenter">us-east-1</span>
+        <span class="port">:8080</span>
+        <span class="passing">100%</span>
+      </div>
+    </div>
+  </div>
+{{/if}}
+</div>
