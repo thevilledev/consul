@@ -1,7 +1,10 @@
 name: ci
 on:
   push:
-    branches: feature/ci-go-discover-upcloud-support
+    branches:
+      feature/ci-go-discover-upcloud-support
+      feature/go-discover-upcloud-support
+
 jobs:
   nain:
     name: Push Docker image to multiple registries
