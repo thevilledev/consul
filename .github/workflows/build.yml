@@ -2,8 +2,8 @@ name: ci
 on:
   push:
     branches:
-      feature/ci-go-discover-upcloud-support
-      feature/go-discover-upcloud-support
+      - feature/ci-go-discover-upcloud-support
+      - feature/go-discover-upcloud-support
 
 jobs:
   nain:
