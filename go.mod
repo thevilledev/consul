@@ -8,7 +8,7 @@ replace github.com/hashicorp/consul/sdk => ./sdk
 
 replace launchpad.net/gocheck => github.com/go-check/check v0.0.0-20140225173054-eb6ee6f84d0a
 
-replace github.com/hashicorp/go-discover => github.com/vtorhonen/go-discover v0.0.2
+replace github.com/hashicorp/go-discover => github.com/vtorhonen/go-discover v0.0.3
 
 require (
 	github.com/Microsoft/go-winio v0.4.3 // indirect
@@ -38,7 +38,7 @@ require (
 	github.com/hashicorp/go-checkpoint v0.0.0-20171009173528-1545e56e46de
 	github.com/hashicorp/go-cleanhttp v0.5.1
 	github.com/hashicorp/go-connlimit v0.3.0
-	github.com/hashicorp/go-discover v0.0.2
+	github.com/hashicorp/go-discover v0.0.3
 	github.com/hashicorp/go-hclog v0.12.0
 	github.com/hashicorp/go-immutable-radix v1.2.0 // indirect
 	github.com/hashicorp/go-memdb v1.1.0
